@@ -14,6 +14,7 @@ MIN_SAMPLES = 20
 def distance(v1, v2):
     return np.sqrt(((v1 - v2) ** 2).sum())
 
+
 def knn(train, test, k=5):
     dist = []
     for i in range(train.shape[0]):
@@ -37,8 +38,11 @@ def load_dataset():
     class_id = 0
     names = {}
 
+    # pastikan folder ada
+    os.makedirs(dataset_path, exist_ok=True)
+
     for fx in os.listdir(dataset_path):
-        if fx.endswith('.npy'):
+        if fx.endswith(".npy"):
             employee_id = fx[:-4]
             names[class_id] = employee_id
 
@@ -51,7 +55,8 @@ def load_dataset():
             class_id += 1
 
     if not face_data:
-        raise Exception("No dataset found in face_dataset/")
+        # JANGAN bikin app mati, biar yang call yang handle
+        raise FileNotFoundError("No dataset found in face_dataset/")
 
     face_dataset = np.concatenate(face_data, axis=0)
     face_labels = np.concatenate(labels, axis=0).reshape((-1, 1))
@@ -60,14 +65,40 @@ def load_dataset():
     return trainset, names
 
 
-# Load dataset pertama kali
-trainset, names = load_dataset()
+# === GLOBAL STATE DATASET (bisa kosong di awal) ===
+trainset = None
+names = {}
+
+
+def init_dataset():
+    """
+    Dipanggil saat startup. Kalau belum ada dataset, cuma log warning.
+    """
+    global trainset, names
+    try:
+        trainset, names = load_dataset()
+        print(f"[INFO] Dataset loaded. Classes: {len(names)}")
+    except FileNotFoundError as e:
+        trainset, names = None, {}
+        print(f"[WARN] {e}. Face recognition disabled until enrollment.")
 #############################################
+
+
+@app.on_event("startup")
+def on_startup():
+    init_dataset()
 
 
 # ========== FACE RECOGNITION ==========
 @app.post("/recognize")
 async def recognize_face(file: UploadFile = File(...)):
+    # cek dulu dataset sudah ada atau belum
+    if trainset is None or not names:
+        raise HTTPException(
+            status_code=400,
+            detail="No face dataset loaded. Please enroll at least one employee first.",
+        )
+
     contents = await file.read()
     np_arr = np.frombuffer(contents, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -81,11 +112,11 @@ async def recognize_face(file: UploadFile = File(...)):
     if len(faces) == 0:
         raise HTTPException(status_code=400, detail="No face detected")
 
-    faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
+    faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
     x, y, w, h = faces[0]
 
     offset = 5
-    face_section = img[y-offset:y+h+offset, x-offset:x+w+offset]
+    face_section = img[y - offset : y + h + offset, x - offset : x + w + offset]
     face_section = cv2.resize(face_section, (100, 100))
 
     out = knn(trainset, face_section.flatten())
@@ -98,8 +129,10 @@ async def recognize_face(file: UploadFile = File(...)):
 @app.post("/enroll")
 async def enroll_face(
     employee_id: str = Form(...),
-    images: List[UploadFile] = File(...)
+    images: List[UploadFile] = File(...),
 ):
+    global trainset, names
+
     face_data = []
 
     for img_file in images:
@@ -114,11 +147,11 @@ async def enroll_face(
         if len(faces) == 0:
             continue
 
-        faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
+        faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
         x, y, w, h = faces[0]
 
         offset = 5
-        face_section = frame[y-offset:y+h+offset, x-offset:x+w+offset]
+        face_section = frame[y - offset : y + h + offset, x - offset : x + w + offset]
         face_section = cv2.resize(face_section, (100, 100))
 
         face_data.append(face_section)
@@ -126,26 +159,46 @@ async def enroll_face(
     if len(face_data) < MIN_SAMPLES:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough samples ({len(face_data)}/{MIN_SAMPLES})"
+            detail=f"Not enough samples ({len(face_data)}/{MIN_SAMPLES})",
         )
 
     face_data = np.array(face_data)
     face_data = face_data.reshape((face_data.shape[0], -1))
 
     os.makedirs(dataset_path, exist_ok=True)
-
     np.save(os.path.join(dataset_path, f"{employee_id}.npy"), face_data)
 
-    return {"message": "Face enrolled", "samples": len(face_data), "employee_id": employee_id}
+    # setelah enroll, reload dataset ke memory
+    try:
+        trainset, names = load_dataset()
+        print(
+            f"[INFO] Dataset reloaded after enroll. Classes: {len(names)}",
+        )
+    except FileNotFoundError:
+        # harusnya gak kejadian di sini, tapi just in case
+        trainset, names = None, {}
+        print("[ERROR] Failed to reload dataset after enrollment.")
+
+    return {
+        "message": "Face enrolled",
+        "samples": len(face_data),
+        "employee_id": employee_id,
+    }
 
 
 # ========== RELOAD DATASET ==========
 @app.post("/reload-dataset")
-async def reload_dataset():
+async def reload_dataset_endpoint():
     global trainset, names
-    trainset, names = load_dataset()
-    return {"message": "Dataset reloaded", "total_classes": len(names)}
+    try:
+        trainset, names = load_dataset()
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail="No dataset found in face_dataset/. Please enroll first.",
+        )
 
+    return {"message": "Dataset reloaded", "total_classes": len(names)}
 
 
 @app.post("/has-face")
@@ -167,56 +220,5 @@ async def has_face(file: UploadFile = File(...)):
     return {
         "has_face": len(faces) > 0,
         "count": len(faces),
-        "boxes": boxes,  # optional, bisa dipakai nanti buat bounding box di FE
+        "boxes": boxes,
     }
-
-# @app.post("/verify-step")
-# async def verify_step(
-#     step_code: str = Form(...),   # LOOK_CENTER / SMILE / TURN_LEFT / RAISE_HAND, dll
-#     images: List[UploadFile] = File(...)
-# ):
-#     if trainset is None or len(names) == 0:
-#         raise HTTPException(status_code=500, detail="Dataset not loaded")
-
-#     recognized_ids = []
-
-#     for img_file in images:
-#         contents = await img_file.read()
-#         np_arr = np.frombuffer(contents, np.uint8)
-#         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-#         if frame is None:
-#             continue
-
-#         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-#         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-#         if len(faces) == 0:
-#             continue
-
-#         faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
-#         x, y, w, h = faces[0]
-
-#         offset = 5
-#         face_section = frame[y-offset:y+h+offset, x-offset:x+w+offset]
-#         face_section = cv2.resize(face_section, (100, 100))
-
-#         out = knn(trainset, face_section.flatten())
-#         employee_id = names[int(out)]
-#         recognized_ids.append(employee_id)
-
-#         # TODO: di sini nanti bisa ditambah logika cek ekspresi/gesture
-
-#     if not recognized_ids:
-#         raise HTTPException(status_code=400, detail="No face detected in any frame")
-
-#     # simple voting: siapa yg paling sering muncul
-#     unique_ids, counts = np.unique(np.array(recognized_ids), return_counts=True)
-#     best_index = np.argmax(counts)
-#     best_employee_id = unique_ids[best_index]
-
-#     # untuk sekarang: kita cuma verify ID sama, belum benar-benar cek ekspresi step_code
-#     return {
-#         "passed": True,
-#         "employee_id": best_employee_id,
-#         "step_code": step_code,
-#         "frames_used": len(recognized_ids)
-#     }
