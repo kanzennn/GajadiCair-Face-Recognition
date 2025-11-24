@@ -1,0 +1,57 @@
+name: 🚀 CI/CD Face Recognition Development
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: Development
+
+    steps:
+      - name: 📦 Checkout Code
+        uses: actions/checkout@v4
+
+      # Kalau mau ada unit test Python, bisa tambahin step di sini
+      # - name: 🧪 Run tests
+      #   run: |
+      #     pip install -r requirements.txt
+      #     pytest
+
+      - name: 🔐 Docker Login
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: 🛠️ Build Docker Image
+        run: docker build --no-cache -t kanzen523/face-recognition-api:latest .
+
+      - name: 📤 Push Docker Image
+        run: docker push kanzen523/face-recognition-api:latest
+
+      - name: 🚢 Deploy to VPS Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "🔁 Pulling latest Docker image..."
+            docker pull kanzen523/face-recognition-api:latest
+
+            echo "🛑 Stopping and removing old container (if exists)..."
+            docker stop face-recognition-api || true
+            docker rm face-recognition-api || true
+
+            echo "🚀 Running new container..."
+            docker run -d \
+              --name face-recognition-api \
+              --restart unless-stopped \
+              --network postgis-setup_postgis-network \
+              -p ${{ vars.FACE_API_PORT }}:8000 \
+              kanzen523/face-recognition-api:latest
+
+            echo "🧹 Cleaning up unused Docker resources..."
+            docker system prune -f
+
+            echo "✅ Deployment to Development environment completed successfully!"
