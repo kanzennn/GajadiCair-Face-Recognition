@@ -48,6 +48,7 @@ jobs:
               --name face-recognition-api \
               --restart unless-stopped \
               --network postgis-setup_postgis-network \
+              -v /opt/face_dataset:/app/face_dataset \
               -p ${{ vars.FACE_API_PORT }}:8000 \
               kanzen523/face-recognition-api:latest
 
