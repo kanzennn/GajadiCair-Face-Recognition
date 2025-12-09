@@ -23,7 +23,9 @@ if face_cascade.empty():
     raise Exception("Failed to load face cascade classifier!")
 
 dataset_path = "./face_dataset/"
-
+MIN_SAMPLES = 20
+MAX_FILE_SIZE = 10 * 1024 * 1024
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp'}
 
 # ==============================
 # KNN FUNCTIONS
