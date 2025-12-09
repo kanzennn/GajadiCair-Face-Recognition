@@ -11,11 +11,18 @@ app = FastAPI()
 # ==============================
 # CONFIGURATIONS
 # ==============================
-face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
+cascade_path = "haarcascade_frontalface_alt.xml"
+if not os.path.exists(cascade_path):
+    # Fallback ke cascade bawaan OpenCV
+    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    print(f"Using fallback cascade: {cascade_path}")
+
+face_cascade = cv2.CascadeClassifier(cascade_path)
+
+if face_cascade.empty():
+    raise Exception("Failed to load face cascade classifier!")
+
 dataset_path = "./face_dataset/"
-MIN_SAMPLES = 20
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp'}
 
 
 # ==============================
