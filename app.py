@@ -322,12 +322,20 @@ async def enroll_face(
     Requires at least 20 valid face images.
     """
     if not employee_id or len(employee_id.strip()) == 0:
-        raise HTTPException(status_code=400, detail="employee_id cannot be empty")
+        raise HTTPException(status_code=400, detail={
+                "message": f"Employee ID is required.",
+                "error": "invalid_employee_id"
+            }
+        )
     
     # Check if already exists
     employee_file = os.path.join(dataset_path, f"{employee_id}.npy")
     if os.path.exists(employee_file):
-        raise HTTPException(status_code=400, detail=f"Employee {employee_id} already enrolled. Use different ID.")
+        raise HTTPException(status_code=400, detail={
+                "message": f"Employee {employee_id} already enrolled. Use different ID.",
+                "error": "employee_exists"
+            }
+        )
     
     face_data = []
 
@@ -360,9 +368,10 @@ async def enroll_face(
         face_data.append(face_section)
 
     if len(face_data) < MIN_SAMPLES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Not enough valid face samples ({len(face_data)}/{MIN_SAMPLES}). Upload more images with clear faces."
+        raise HTTPException(status_code=400, detail={
+                "message": f"Not enough valid face samples ({len(face_data)}/{MIN_SAMPLES}). Upload more images with clear faces.",
+                "error": "insufficient_samples",
+            }
         )
 
     face_data = np.array(face_data)
