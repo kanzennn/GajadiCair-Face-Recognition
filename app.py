@@ -98,11 +98,17 @@ except Exception as e:
 def validate_file(file: UploadFile):
     """Validate file type and size"""
     if file.size and file.size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"File too large (max {MAX_FILE_SIZE//1024//1024}MB)")
+        raise HTTPException(status_code=400, detail={
+            "message": f"File too large (max {MAX_FILE_SIZE//1024//1024}MB)",
+            "error": "file_too_large"
+        })
     
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {ALLOWED_EXTENSIONS}")
+        raise HTTPException(status_code=400, detail={
+            "message": f"Unsupported file type: {ext}, Invalid file type. Allowed: {ALLOWED_EXTENSIONS}",
+            "error": "invalid_file_type"
+        })
 
 
 # ==============================
@@ -124,7 +130,7 @@ async def decode_image(file: UploadFile):
 
 
 # ==============================
-# GESTURE DETECTION (Backend Only)
+# GESTURE DETECTION (Backend Only)has-face
 # ==============================
 mp_hands = mp.solutions.hands
 hands_detector = mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5)
@@ -399,7 +405,10 @@ async def recognize_face(file: UploadFile = File(...)):
     Returns employee_id if face is recognized.
     """
     if len(names) == 0:
-        raise HTTPException(status_code=400, detail="No enrolled faces in database")
+        raise HTTPException(status_code=400, detail={
+            "message": "No employees enrolled yet.",
+            "error": "no_dataset"
+        })
     
     validate_file(file)
     img = await decode_image(file)
@@ -408,7 +417,10 @@ async def recognize_face(file: UploadFile = File(...)):
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
     if len(faces) == 0:
-        raise HTTPException(status_code=400, detail="No face detected")
+        raise HTTPException(status_code=400, detail={
+            "message": "No face detected in the image.",
+            "error": "no_face"
+        })
 
     # Get largest face
     faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
