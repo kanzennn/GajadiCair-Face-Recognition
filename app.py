@@ -458,3 +458,55 @@ async def reload_dataset():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.delete("/delete")
+async def delete(
+    employee_id: str = Form(...)
+):    
+    employee_id = employee_id.strip()
+
+    if not employee_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Employee ID is required",
+                "error": "invalid_employee_id"
+            }
+        )
+    
+    dataset_file_path= os.path.join(dataset_path, f"{employee_id}.npy")
+
+    if not os.path.exists(dataset_file_path):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Dataset belum didaftarkan",
+                "error": "dataset_not_found"
+            }
+        )
+    
+    try:
+        os.remove(dataset_file_path)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Gagal menghapus dataset",
+                "error": str(e)
+            }
+        )
+    
+    global trainset, names
+    try:
+        trainset, names = load_dataset()
+    except Exception:
+        trainset = np.array([])
+        names = {}
+
+
+    return {
+        "message": "Dataset berhasil dihapus",
+        "employee_id": employee_id,
+        "dataset_path": dataset_file_path,
+        "timestamp": datetime.now().isoformat()
+    }
