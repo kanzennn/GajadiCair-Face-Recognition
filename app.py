@@ -5,6 +5,16 @@ import cv2
 import os
 import mediapipe as mp
 from datetime import datetime
+from gesture_dataset.thumbsup import isThumbsup
+from gesture_dataset.peace import isPeace
+from gesture_dataset.Rock import isRock
+from gesture_dataset.ok import isOk
+from gesture_dataset.l import isL
+from gesture_dataset.fist import isFist
+from gesture_dataset.hi import isHi
+from gesture_dataset.three import isThree
+from gesture_dataset.pointing import isPointing
+
 
 app = FastAPI()
 
@@ -134,15 +144,19 @@ async def decode_image(file: UploadFile):
 # ==============================
 mp_hands = mp.solutions.hands
 hands_detector = mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5)
-ALLOWED_GESTURES = ["Thumbs Up", "Peace", "Rock", "OK"]
-
+GESTURE_REGISTRY = [
+    ("OK", isOk),
+    ("L", isL),    
+    ("Peace", isPeace),
+    ("Rock", isRock),
+    ("Three", isThree),
+    ("Pointing", isPointing),
+    ("Thumbs-Up", isThumbsup),
+    ("Hi", isHi),              
+    ("Fist", isFist)           
+]
 
 def detect_gesture(frame):
-    """
-    Detect hand gestures in a frame.
-    This is a backend function, not exposed as API endpoint.
-    Can be called internally by other backend services.
-    """
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands_detector.process(rgb)
 
@@ -150,55 +164,57 @@ def detect_gesture(frame):
         return []
 
     gestures = []
+
+    gesture_functions = GESTURE_REGISTRY
+
     for lm, hd in zip(result.multi_hand_landmarks, result.multi_handedness):
+
         hand_label = hd.classification[0].label
 
-        ujung_jempol = lm.landmark[mp_hands.HandLandmark.THUMB_TIP]
-        ujung_telunjuk = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        ujung_tengah = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-        ujung_manis = lm.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
-        ujung_kelingking = lm.landmark[mp_hands.HandLandmark.PINKY_TIP]
+        # Ujung jari
+        ujung_jempol    = lm.landmark[mp_hands.HandLandmark.THUMB_TIP]
+        ujung_telunjuk  = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        ujung_tengah    = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+        ujung_manis     = lm.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+        ujung_kelingking= lm.landmark[mp_hands.HandLandmark.PINKY_TIP]
 
-        pangkal_telunjuk = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
-        pangkal_tengah = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
-        pangkal_manis = lm.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
+        # Pangkal jari (MCP)
+        pangkal_telunjuk   = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
+        pangkal_tengah     = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
+        pangkal_manis      = lm.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
         pangkal_kelingking = lm.landmark[mp_hands.HandLandmark.PINKY_MCP]
+        pangkal_jempol     = lm.landmark[mp_hands.HandLandmark.THUMB_IP]
 
-        gesture = None
 
-        # Thumbs Up
-        if (ujung_jempol.y < ujung_telunjuk.y and
-            ujung_jempol.y < ujung_tengah.y and
-            ujung_jempol.y < ujung_manis.y and
-            ujung_jempol.y < ujung_kelingking.y):
-            gesture = "Thumbs Up"
+        detected = None
 
-        # Peace
-        elif (ujung_telunjuk.y < pangkal_telunjuk.y and
-              ujung_tengah.y < pangkal_tengah.y and
-              ujung_manis.y > pangkal_manis.y and
-              ujung_kelingking.y > pangkal_kelingking.y):
-            gesture = "Peace"
 
-        # Rock
-        elif (ujung_telunjuk.y < pangkal_telunjuk.y and
-              ujung_kelingking.y < pangkal_kelingking.y and
-              ujung_tengah.y > pangkal_tengah.y and
-              ujung_manis.y > pangkal_manis.y):
-            gesture = "Rock"
+        for name, func in gesture_functions:
+            result_gesture = func(
+                ujung_jempol,
+                ujung_telunjuk,
+                ujung_tengah,
+                ujung_manis,
+                ujung_kelingking,
+                pangkal_jempol,
+                pangkal_telunjuk,
+                pangkal_tengah,
+                pangkal_manis,
+                pangkal_kelingking
+            )
 
-        # OK
-        elif (abs(ujung_jempol.x - ujung_telunjuk.x) < 0.05 and
-              abs(ujung_jempol.y - ujung_telunjuk.y) < 0.05 and
-              ujung_tengah.y < pangkal_tengah.y and
-              ujung_manis.y < pangkal_manis.y and
-              ujung_kelingking.y < pangkal_kelingking.y):
-            gesture = "OK"
+            if result_gesture:
+                detected = result_gesture
+                break
 
-        if gesture:
-            gestures.append({"hand": hand_label, "gesture": gesture})
+        if detected:
+            gestures.append({
+                "hand": hand_label,
+                "gesture": detected
+            })
 
     return gestures
+
 
 
 def validate_gesture_level(frames, level="basic"):
@@ -445,7 +461,6 @@ async def recognize_face(file: UploadFile = File(...)):
         "confidence": "high",
         "face_location": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
         "gestures_detected": gestures,
-        "available_gestures": ALLOWED_GESTURES
     }
 
 
@@ -513,4 +528,14 @@ async def delete(
         "employee_id": employee_id,
         "dataset_path": dataset_file_path,
         "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/allowed-gestures")
+async def get_allowed_gestures():
+    """
+    Return list of allowed gestures (static).
+    """
+    return {
+        "allowed_gestures": [name for name, _ in GESTURE_REGISTRY],
+        "total": len(GESTURE_REGISTRY)
     }
