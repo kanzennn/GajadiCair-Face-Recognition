@@ -438,10 +438,14 @@ async def recognize_face(file: UploadFile = File(...)):
     out = knn(trainset, face_section.flatten())
     employee_id = names[int(out)]
 
+    gestures = detect_gesture(img)
+
     return {
         "employee_id": employee_id,
         "confidence": "high",
-        "face_location": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
+        "face_location": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+        "gestures_detected": gestures,
+        "available_gestures": ALLOWED_GESTURES
     }
 
 
