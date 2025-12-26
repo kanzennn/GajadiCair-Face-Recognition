@@ -7,7 +7,7 @@ import mediapipe as mp
 from datetime import datetime
 from gesture_dataset.thumbsup import isThumbsup
 from gesture_dataset.peace import isPeace
-from gesture_dataset.Rock import isRock
+from gesture_dataset.rock import isRock
 from gesture_dataset.ok import isOk
 from gesture_dataset.l import isL
 from gesture_dataset.fist import isFist
@@ -156,41 +156,44 @@ GESTURE_REGISTRY = [
     ("Fist", isFist)           
 ]
 
+ALLOWED_GESTURES = [name for name, _ in GESTURE_REGISTRY]
+
 def detect_gesture(frame):
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands_detector.process(rgb)
 
-    if not result.multi_hand_landmarks or not result.multi_handedness:
-        return []
-
     gestures = []
+
+    if not result.multi_hand_landmarks:
+        return gestures
 
     gesture_functions = GESTURE_REGISTRY
 
-    for lm, hd in zip(result.multi_hand_landmarks, result.multi_handedness):
+    for i, lm in enumerate(result.multi_hand_landmarks):
 
-        hand_label = hd.classification[0].label
+        if result.multi_handedness and i < len(result.multi_handedness):
+            hand_label = result.multi_handedness[i].classification[0].label
+        else:
+            hand_label = "Unknown"
 
         # Ujung jari
-        ujung_jempol    = lm.landmark[mp_hands.HandLandmark.THUMB_TIP]
-        ujung_telunjuk  = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        ujung_tengah    = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-        ujung_manis     = lm.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
-        ujung_kelingking= lm.landmark[mp_hands.HandLandmark.PINKY_TIP]
+        ujung_jempol     = lm.landmark[mp_hands.HandLandmark.THUMB_TIP]
+        ujung_telunjuk   = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        ujung_tengah     = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+        ujung_manis      = lm.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+        ujung_kelingking = lm.landmark[mp_hands.HandLandmark.PINKY_TIP]
 
-        # Pangkal jari (MCP)
+        # Pangkal jari
         pangkal_telunjuk   = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
         pangkal_tengah     = lm.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
         pangkal_manis      = lm.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
         pangkal_kelingking = lm.landmark[mp_hands.HandLandmark.PINKY_MCP]
         pangkal_jempol     = lm.landmark[mp_hands.HandLandmark.THUMB_IP]
 
-
         detected = None
 
-
         for name, func in gesture_functions:
-            result_gesture = func(
+            if func(
                 ujung_jempol,
                 ujung_telunjuk,
                 ujung_tengah,
@@ -201,13 +204,11 @@ def detect_gesture(frame):
                 pangkal_tengah,
                 pangkal_manis,
                 pangkal_kelingking
-            )
+            ):
+                detected = name
+                break  
 
-            if result_gesture:
-                detected = result_gesture
-                break
-
-        if detected:
+        if detected is not None:
             gestures.append({
                 "hand": hand_label,
                 "gesture": detected

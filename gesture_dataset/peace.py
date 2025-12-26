@@ -1,21 +1,26 @@
-THRESH = 0.03
+THRESH = 0.04   
 def isPeace(
     ujung_jempol, ujung_telunjuk, ujung_tengah, ujung_manis, ujung_kelingking,
     pangkal_jempol, pangkal_telunjuk, pangkal_tengah, pangkal_manis, pangkal_kelingking
 ):
-    index_middle_extended = (
-        ujung_telunjuk.y < pangkal_telunjuk.y and
-        ujung_tengah.y < pangkal_tengah.y
-    )
+    index_extended = (pangkal_telunjuk.y - ujung_telunjuk.y) > THRESH
+    middle_extended = (pangkal_tengah.y - ujung_tengah.y) > THRESH
 
-    other_fingers_bent = (
-        ujung_manis.y > pangkal_manis.y and
-        ujung_kelingking.y > pangkal_kelingking.y
-    )
+    ring_bent = (ujung_manis.y - pangkal_manis.y) > -THRESH
+    pinky_bent = (ujung_kelingking.y - pangkal_kelingking.y) > -THRESH
 
-    thumb_bent = ujung_jempol.y > pangkal_jempol.y
+    index_middle_gap = abs(ujung_telunjuk.x - ujung_tengah.x) > THRESH
 
-    if index_middle_extended and other_fingers_bent and thumb_bent:
+    thumb_not_extended = abs(ujung_jempol.x - pangkal_jempol.x) < THRESH * 1.5
+
+    if (
+        index_extended and
+        middle_extended and
+        ring_bent and
+        pinky_bent and
+        index_middle_gap and
+        thumb_not_extended
+    ):
         return "Peace"
 
     return None
